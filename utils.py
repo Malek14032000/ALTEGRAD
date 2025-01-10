@@ -225,3 +225,50 @@ def sigmoid_beta_schedule(timesteps):
     betas = torch.linspace(-6, 6, timesteps)
     return torch.sigmoid(betas) * (beta_end - beta_start) + beta_start
 
+
+
+def extract_graph(edge_list_str):
+    edge_list = ast.literal_eval(edge_list_str)
+    G = nx.Graph()
+    G.add_edges_from(edge_list)
+    return G
+
+
+def calculate_MAE(output_path = 'output.csv'):
+
+    properties_graph_lst = []
+    properties_desc_lst = []
+    
+    desc_file = './data/test/test.txt'
+    fr = open(desc_file, "r")
+    for line in fr:
+        line = line.strip()
+        tokens = line.split(",")
+        desc = tokens[1:]
+        desc = "".join(desc)
+        feats_stats = extract_numbers(desc)
+        feats_stats = torch.FloatTensor(feats_stats).unsqueeze(0)
+        properties_desc_lst.append(feats_stats.numpy())
+    fr.close()                  
+    
+    output_graphs = pd.read_csv(output_path)
+    for _, row in output_graphs.iterrows():
+        edge_list_str = row['edge_list']
+        G = extract_graph(edge_list_str)
+        partition = community_louvain.best_partition(G, random_state=42)
+        properties_graph_lst.append([G.number_of_nodes(),
+                                     G.number_of_edges(),
+                                     2 * G.number_of_edges() / G.number_of_nodes(),
+                                     sum(nx.triangles(G).values()) // 3,
+                                     nx.transitivity(G),
+                                     max(nx.core_number(G).values()),
+                                     len(set(partition.values()))])
+        
+    properties_graph_lst = np.array(properties_graph_lst)
+        
+    mae = np.mean(np.abs(properties_graph_lst - properties_desc_lst), axis=0)  # Per-feature MAE
+    overall_mae = np.mean(mae)  # Mean across all features
+    score = overall_mae / 241
+
+    print(f"*** Overall MAE: {overall_mae}")
+    print(f"*** Score: {score}")
